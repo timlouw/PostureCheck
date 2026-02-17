@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PostureCheck</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="logo">🧍 <span>PostureCheck</span></div>
+      <div id="status" class="status waiting">Waiting for camera…</div>
+    </header>
+
+    <main>
+      <!-- Camera feed -->
+      <section class="camera-section">
+        <div class="camera-container">
+          <video id="webcam" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div id="alert-overlay" class="alert-overlay hidden">
+            <div class="alert-content">
+              <span class="alert-icon">⚠️</span>
+              <span class="alert-text">Fix Your Posture!</span>
+            </div>
+          </div>
+          <div id="loading-overlay" class="loading-overlay">
+            <div class="spinner"></div>
+            <p>Loading pose model…</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Controls sidebar -->
+      <aside class="controls">
+
+        <!-- Camera Position -->
+        <div class="panel">
+          <h2>📷 Camera Position</h2>
+          <p class="panel-hint">Where is your camera relative to you?</p>
+          <div class="cam-positions">
+            <button class="cam-btn" data-angle="front" title="Camera directly in front">
+              <span class="cam-icon">👤</span><span>Front</span>
+            </button>
+            <button class="cam-btn" data-angle="front-left" title="Camera ~45° to your left">
+              <span class="cam-icon">◣</span><span>45° Left</span>
+            </button>
+            <button class="cam-btn" data-angle="front-right" title="Camera ~45° to your right">
+              <span class="cam-icon">◢</span><span>45° Right</span>
+            </button>
+            <button class="cam-btn" data-angle="side-left" title="Camera at your left side">
+              <span class="cam-icon">◀</span><span>Side L</span>
+            </button>
+            <button class="cam-btn" data-angle="side-right" title="Camera at your right side">
+              <span class="cam-icon">▶</span><span>Side R</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live metrics -->
+        <div class="panel">
+          <h2>Live Metrics</h2>
+          <div class="metric">
+            <div class="metric-header">
+              <label id="metric-label-0">—</label>
+              <span id="val-m0" class="metric-value">—</span>
+            </div>
+            <div class="metric-bar"><div id="bar-m0" class="bar-fill"></div></div>
+          </div>
+          <div class="metric">
+            <div class="metric-header">
+              <label id="metric-label-1">—</label>
+              <span id="val-m1" class="metric-value">—</span>
+            </div>
+            <div class="metric-bar"><div id="bar-m1" class="bar-fill"></div></div>
+          </div>
+          <div class="metric">
+            <div class="metric-header">
+              <label id="metric-label-2">—</label>
+              <span id="val-m2" class="metric-value">—</span>
+            </div>
+            <div class="metric-bar"><div id="bar-m2" class="bar-fill"></div></div>
+          </div>
+          <div class="metric">
+            <div class="metric-header">
+              <label id="metric-label-3">—</label>
+              <span id="val-m3" class="metric-value">—</span>
+            </div>
+            <div class="metric-bar"><div id="bar-m3" class="bar-fill"></div></div>
+          </div>
+          <div id="posture-score" class="posture-score">
+            <span class="score-label">Posture Score</span>
+            <span id="score-value" class="score-value">—</span>
+          </div>
+        </div>
+
+        <!-- Posture Training -->
+        <div class="panel">
+          <h2>🎯 Posture Training</h2>
+          <p class="panel-hint">Sit in different positions and capture samples. More samples = better accuracy.</p>
+
+          <div class="training-controls">
+            <div class="train-row">
+              <button id="train-good-btn" class="train-btn good" disabled>
+                ✅ Good Posture <span id="good-count" class="train-count">(0)</span>
+              </button>
+              <button id="train-bad-btn" class="train-btn bad" disabled>
+                ❌ Bad Posture <span id="bad-count" class="train-count">(0)</span>
+              </button>
+            </div>
+            <div class="train-row">
+              <button id="train-clear-btn" class="train-btn neutral" disabled>🗑 Clear All</button>
+              <button id="train-undo-btn" class="train-btn neutral" disabled>↩ Undo Last</button>
+            </div>
+          </div>
+
+          <div id="training-status" class="training-status">
+            Capture at least 3 good + 3 bad pose samples to enable detection.
+          </div>
+
+          <div id="sample-list" class="sample-list"></div>
+        </div>
+
+        <!-- Sensitivity -->
+        <div class="panel">
+          <h2>Sensitivity</h2>
+          <div class="slider-group">
+            <label>Threshold <span id="thresh-val" class="slider-val">0.55</span></label>
+            <input type="range" id="thresh-score" min="0.3" max="0.9" value="0.55" step="0.01" />
+            <p class="slider-hint">Lower = more strict. Higher = more lenient.</p>
+          </div>
+        </div>
+
+        <!-- Alert settings -->
+        <div class="panel">
+          <h2>Alerts</h2>
+          <div class="slider-group">
+            <label>Alert after <span id="delay-val" class="slider-val">10s</span> of bad posture</label>
+            <input type="range" id="alert-delay" min="3" max="30" value="10" step="1" />
+          </div>
+          <div class="slider-group">
+            <label>Cooldown <span id="cooldown-val" class="slider-val">60s</span> between alerts</label>
+            <input type="range" id="alert-cooldown" min="10" max="180" value="60" step="5" />
+          </div>
+          <div class="toggle-row">
+            <label class="toggle"><input type="checkbox" id="sound-enabled" checked /><span class="toggle-label">🔊 Sound</span></label>
+            <label class="toggle"><input type="checkbox" id="notify-enabled" checked /><span class="toggle-label">🖥️ System Toast</span></label>
+          </div>
+        </div>
+
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
