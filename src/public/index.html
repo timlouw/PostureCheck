@@ -147,11 +147,44 @@
             <label class="toggle"><input type="checkbox" id="sound-enabled" checked /><span class="toggle-label">🔊 Sound</span></label>
             <label class="toggle"><input type="checkbox" id="notify-enabled" checked /><span class="toggle-label">🖥️ Notifications</span></label>
           </div>
+
+          <!-- Sound selector -->
+          <div class="sound-selector">
+            <label>Alert Sound</label>
+            <div class="sound-row">
+              <select id="sound-select">
+                <option value="chime">🔔 Classic Chime</option>
+                <option value="airhorn">📯 Air Horn</option>
+                <option value="bruh">😐 "Bruh" Drop</option>
+                <option value="vine_boom">💥 Vine Boom</option>
+                <option value="sad_trombone">🎺 Sad Trombone</option>
+                <option value="oof">💀 "OOF"</option>
+                <option value="metal_gear">❗ Alert (MGS)</option>
+                <option value="navi_hey">🧚 "Hey! Listen!"</option>
+                <option value="fbi_open_up">🚔 Siren Wail</option>
+                <option value="dramatic">🎻 Dramatic Sting</option>
+              </select>
+              <button id="sound-preview-btn" class="preview-btn" title="Preview sound">▶</button>
+            </div>
+          </div>
+
           <div id="notif-status" class="notif-status"></div>
           <button id="notif-perm-btn" class="notif-perm-btn hidden">Enable Browser Notifications</button>
           <p class="panel-hint" style="margin-top: 0.5rem; margin-bottom: 0;">
-            Alerts use 5 channels: visual overlay, sound, browser notification, system toast, and title flash — so you'll notice even with the tab in the background.
+            Notifications use browser popup when available, otherwise a system toast. Title bar also flashes.
           </p>
+        </div>
+
+        <!-- Config Export/Import -->
+        <div class="panel">
+          <h2>💾 Config</h2>
+          <p class="panel-hint">Export your training data and settings to share or back up. Import to restore.</p>
+          <div class="config-controls">
+            <button id="export-config-btn" class="config-btn">📤 Export Config</button>
+            <button id="import-config-btn" class="config-btn">📥 Import Config</button>
+          </div>
+          <div id="config-status" class="config-status"></div>
+          <textarea id="config-textarea" class="config-textarea hidden" rows="4" placeholder="Paste exported config JSON here, then click Import…"></textarea>
         </div>
 
       </aside>

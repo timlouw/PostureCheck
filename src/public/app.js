@@ -36,6 +36,12 @@ const soundEnabledEl  = $("sound-enabled");
 const notifyEnabledEl = $("notify-enabled");
 const notifStatusEl   = $("notif-status");
 const notifPermBtn    = $("notif-perm-btn");
+const soundSelectEl   = $("sound-select");
+const soundPreviewBtn = $("sound-preview-btn");
+const exportBtn       = $("export-config-btn");
+const importBtn       = $("import-config-btn");
+const configTextarea  = $("config-textarea");
+const configStatus    = $("config-status");
 
 // ── State ─────────────────────────────────────────────
 
@@ -58,6 +64,9 @@ let trainedModel = null; // { goodCentroid, badCentroid } once enough samples
 // Alert timing
 let badPostureSince = null;
 let lastAlertTime = 0;
+
+// Selected alert sound
+let selectedSound = "chime";
 
 // Audio — must be resumed on user gesture
 let audioCtx = null;
@@ -725,15 +734,17 @@ function fireAlert() {
   // 2 — Sound
   if (soundEnabledEl.checked) playAlertSound();
 
-  // 3 — Browser Notification (works in background tabs)
-  if (notifyEnabledEl.checked) showBrowserNotification();
-
-  // 4 — Server-side system toast
-  if (notifyEnabledEl.checked && ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "bad-posture", message: "Fix your posture! 🧍" }));
+  // 3 — Notification: prefer browser notification, fall back to server toast
+  //     (only one, not both — avoids duplicate alerts)
+  if (notifyEnabledEl.checked) {
+    if (notifPermission === "granted") {
+      showBrowserNotification();
+    } else if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "bad-posture", message: "Fix your posture! 🧍" }));
+    }
   }
 
-  // 5 — Title flash
+  // 4 — Title flash
   startTitleFlash();
 
   // Auto-dismiss visual overlay after 5s
@@ -762,6 +773,213 @@ function ensureAudioContext() {
   return audioCtx;
 }
 
+// ══════════════════════════════════════════════════════════
+//  Sound Bites — 10 selectable alert sounds
+//  All synthesized with Web Audio API (no external files)
+// ══════════════════════════════════════════════════════════
+
+const SOUND_BITES = {
+  chime: {
+    label: "🔔 Classic Chime",
+    play(ctx) {
+      const tone = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value = freq; osc.type = "sine";
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + dur);
+      };
+      tone(523, 0, 0.15); tone(659, 0.18, 0.15); tone(784, 0.36, 0.25);
+    },
+  },
+  airhorn: {
+    label: "📯 Air Horn",
+    play(ctx) {
+      // Layered sawtooth waves for that MLG air horn feel
+      [480, 600, 720].forEach((f) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "sawtooth"; osc.frequency.value = f;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.8);
+      });
+    },
+  },
+  bruh: {
+    label: '😐 "Bruh" Drop',
+    play(ctx) {
+      // Low descending tone with noise burst
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(220, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.35, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+    },
+  },
+  vine_boom: {
+    label: "💥 Vine Boom",
+    play(ctx) {
+      // Deep thud + resonance
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(120, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.4);
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
+      // Impact transient
+      const noise = ctx.createBufferSource();
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+      noise.buffer = buf;
+      const ng = ctx.createGain();
+      noise.connect(ng); ng.connect(ctx.destination);
+      ng.gain.setValueAtTime(0.4, ctx.currentTime);
+      ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      noise.start(ctx.currentTime); noise.stop(ctx.currentTime + 0.05);
+    },
+  },
+  sad_trombone: {
+    label: "🎺 Sad Trombone",
+    play(ctx) {
+      // Wah wah wah waaaaah
+      const notes = [392, 370, 349, 233];
+      const durs = [0.25, 0.25, 0.25, 0.6];
+      let t = 0;
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "triangle"; osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + durs[i]);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + durs[i]);
+        t += durs[i] - 0.02;
+      });
+    },
+  },
+  oof: {
+    label: '💀 "OOF"',
+    play(ctx) {
+      // Roblox-style OOF: quick descending tone
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(480, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(160, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.2);
+      // Second harmonic
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2); gain2.connect(ctx.destination);
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(360, ctx.currentTime);
+      osc2.frequency.exponentialRampToValueAtTime(120, ctx.currentTime + 0.18);
+      gain2.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
+      osc2.start(ctx.currentTime); osc2.stop(ctx.currentTime + 0.22);
+    },
+  },
+  metal_gear: {
+    label: "❗ Alert (MGS)",
+    play(ctx) {
+      // Metal Gear Solid alert: sharp high tone
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0, ctx.currentTime + 0.13);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime + 0.2);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.7);
+      osc.frequency.setValueAtTime(1200, ctx.currentTime + 0.2);
+      osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.7);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.7);
+    },
+  },
+  navi_hey: {
+    label: '🧚 "Hey! Listen!"',
+    play(ctx) {
+      // Navi from Zelda: quick high pings
+      [0, 0.15, 0.25].forEach((t) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1400 + t * 600, ctx.currentTime + t);
+        gain.gain.setValueAtTime(0.25, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.1);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + 0.1);
+      });
+    },
+  },
+  fbi_open_up: {
+    label: "🚔 Siren Wail",
+    play(ctx) {
+      // Police siren wail up and down
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sawtooth";
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.0);
+      osc.frequency.setValueAtTime(600, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 0.25);
+      osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.5);
+      osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 0.75);
+      osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 1.0);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 1.0);
+    },
+  },
+  dramatic: {
+    label: "🎻 Dramatic Sting",
+    play(ctx) {
+      // Dramatic orchestra hit: layered low + high
+      [130, 165, 196, 392, 784].forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = i < 3 ? "sawtooth" : "sine";
+        osc.frequency.value = f;
+        gain.gain.setValueAtTime(i < 3 ? 0.1 : 0.06, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 1.2);
+      });
+      // Impact
+      const noise = ctx.createBufferSource();
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.08, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+      noise.buffer = buf;
+      const ng = ctx.createGain();
+      noise.connect(ng); ng.connect(ctx.destination);
+      ng.gain.setValueAtTime(0.3, ctx.currentTime);
+      ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+      noise.start(ctx.currentTime); noise.stop(ctx.currentTime + 0.08);
+    },
+  },
+};
+
 function playAlertSound() {
   try {
     const ctx = ensureAudioContext();
@@ -769,22 +987,8 @@ function playAlertSound() {
       console.warn("[PostureCheck] AudioContext suspended — sound skipped (interact with page first)");
       return;
     }
-    const tone = (freq, start, dur) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = freq;
-      osc.type = "sine";
-      gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
-      osc.start(ctx.currentTime + start);
-      osc.stop(ctx.currentTime + start + dur);
-    };
-    // Three-tone ascending chime
-    tone(523, 0, 0.15);    // C5
-    tone(659, 0.18, 0.15); // E5
-    tone(784, 0.36, 0.25); // G5
+    const sound = SOUND_BITES[selectedSound] ?? SOUND_BITES.chime;
+    sound.play(ctx);
   } catch (err) {
     console.warn("[PostureCheck] Sound playback error:", err);
   }
@@ -897,6 +1101,7 @@ function saveState() {
   localStorage.setItem("posture-v2", JSON.stringify({
     cameraAngle,
     trainingSamples,
+    selectedSound,
     threshScore: threshScoreEl.value,
     alertDelay: alertDelayEl.value,
     alertCooldown: alertCooldownEl.value,
@@ -909,26 +1114,90 @@ function loadSavedState() {
   try {
     const raw = localStorage.getItem("posture-v2");
     if (!raw) return;
-    const s = JSON.parse(raw);
-
-    if (s.cameraAngle) cameraAngle = s.cameraAngle;
-    if (s.trainingSamples) trainingSamples = s.trainingSamples;
-    if (s.threshScore) threshScoreEl.value = s.threshScore;
-    if (s.alertDelay) alertDelayEl.value = s.alertDelay;
-    if (s.alertCooldown) alertCooldownEl.value = s.alertCooldown;
-    if (s.sound !== undefined) soundEnabledEl.checked = s.sound;
-    if (s.notify !== undefined) notifyEnabledEl.checked = s.notify;
-
-    // Sync labels
-    $("thresh-val").textContent = threshScoreEl.value;
-    $("delay-val").textContent = `${alertDelayEl.value}s`;
-    $("cooldown-val").textContent = `${alertCooldownEl.value}s`;
-
-    retrainModel();
-    updateTrainingUI();
+    applyConfig(JSON.parse(raw));
   } catch {
     // Ignore corrupt state
   }
+}
+
+function applyConfig(s) {
+  if (s.cameraAngle) cameraAngle = s.cameraAngle;
+  if (s.trainingSamples) trainingSamples = s.trainingSamples;
+  if (s.selectedSound && SOUND_BITES[s.selectedSound]) {
+    selectedSound = s.selectedSound;
+    if (soundSelectEl) soundSelectEl.value = selectedSound;
+  }
+  if (s.threshScore) threshScoreEl.value = s.threshScore;
+  if (s.alertDelay) alertDelayEl.value = s.alertDelay;
+  if (s.alertCooldown) alertCooldownEl.value = s.alertCooldown;
+  if (s.sound !== undefined) soundEnabledEl.checked = s.sound;
+  if (s.notify !== undefined) notifyEnabledEl.checked = s.notify;
+
+  // Sync labels
+  $("thresh-val").textContent = threshScoreEl.value;
+  $("delay-val").textContent = `${alertDelayEl.value}s`;
+  $("cooldown-val").textContent = `${alertCooldownEl.value}s`;
+
+  retrainModel();
+  updateTrainingUI();
+  updateCameraAngleUI();
+}
+
+function exportConfig() {
+  const config = {
+    _type: "PostureCheck Config",
+    _version: 2,
+    _exported: new Date().toISOString(),
+    cameraAngle,
+    trainingSamples,
+    selectedSound,
+    threshScore: threshScoreEl.value,
+    alertDelay: alertDelayEl.value,
+    alertCooldown: alertCooldownEl.value,
+    sound: soundEnabledEl.checked,
+    notify: notifyEnabledEl.checked,
+  };
+  const json = JSON.stringify(config, null, 2);
+  if (configTextarea) {
+    configTextarea.value = json;
+    configTextarea.classList.remove("hidden");
+  }
+  navigator.clipboard.writeText(json).then(() => {
+    showConfigStatus("✓ Config copied to clipboard!", "good");
+  }).catch(() => {
+    showConfigStatus("Config exported to text box below — copy it manually", "neutral");
+  });
+}
+
+function importConfig() {
+  const text = configTextarea?.value?.trim();
+  if (!text) {
+    showConfigStatus("Paste a config JSON into the text box first", "bad");
+    configTextarea?.classList.remove("hidden");
+    configTextarea?.focus();
+    return;
+  }
+  try {
+    const config = JSON.parse(text);
+    if (config._type !== "PostureCheck Config") {
+      showConfigStatus("✗ Invalid config format", "bad");
+      return;
+    }
+    applyConfig(config);
+    saveState();
+    configTextarea.value = "";
+    configTextarea.classList.add("hidden");
+    showConfigStatus(`✓ Imported! ${config.trainingSamples?.length ?? 0} samples loaded`, "good");
+  } catch (err) {
+    showConfigStatus("✗ Invalid JSON — check the pasted text", "bad");
+  }
+}
+
+function showConfigStatus(msg, type) {
+  if (!configStatus) return;
+  configStatus.textContent = msg;
+  configStatus.className = `config-status ${type}`;
+  setTimeout(() => { configStatus.textContent = ""; configStatus.className = "config-status"; }, 4000);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -968,6 +1237,19 @@ function setupEventListeners() {
   );
   soundEnabledEl.addEventListener("change", saveState);
   notifyEnabledEl.addEventListener("change", saveState);
+
+  // Sound selector
+  soundSelectEl?.addEventListener("change", (e) => {
+    selectedSound = e.target.value;
+    saveState();
+  });
+  soundPreviewBtn?.addEventListener("click", () => {
+    playAlertSound();
+  });
+
+  // Config export/import
+  exportBtn?.addEventListener("click", exportConfig);
+  importBtn?.addEventListener("click", importConfig);
 
   // Notification permission button
   notifPermBtn?.addEventListener("click", async () => {

@@ -569,6 +569,123 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: none;
 }
 
+/* ── Sound Selector ────────────────────────────────── */
+
+.sound-selector {
+  margin-top: 0.75rem;
+}
+
+.sound-selector > label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.sound-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.sound-row select {
+  flex: 1;
+  padding: 0.45rem 0.6rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1.5px solid var(--surface-border);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.sound-row select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.preview-btn {
+  width: 36px;
+  height: 36px;
+  background: rgba(124, 77, 255, 0.12);
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.preview-btn:hover {
+  background: rgba(124, 77, 255, 0.25);
+}
+
+/* ── Config Export/Import ──────────────────────────── */
+
+.config-controls {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.config-btn {
+  flex: 1;
+  padding: 0.5rem 0.5rem;
+  background: transparent;
+  border: 1.5px solid var(--surface-border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.config-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(124, 77, 255, 0.08);
+}
+
+.config-status {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  padding: 0 0.2rem;
+  min-height: 1.2em;
+  transition: all 0.3s;
+}
+
+.config-status.good { color: var(--good); }
+.config-status.bad { color: var(--bad); }
+.config-status.neutral { color: var(--warning); }
+
+.config-textarea {
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1.5px solid var(--surface-border);
+  border-radius: 8px;
+  font-family: "SF Mono", "Cascadia Code", "Consolas", monospace;
+  font-size: 0.7rem;
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.config-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.config-textarea.hidden {
+  display: none;
+}
+
 /* ── Status Badge ──────────────────────────────────── */
 
 .status {
