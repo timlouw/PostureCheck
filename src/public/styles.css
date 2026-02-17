@@ -517,6 +517,58 @@ input[type="range"]::-webkit-slider-thumb:hover {
   cursor: pointer;
 }
 
+/* ── Notification Status ───────────────────────────── */
+
+.notif-status {
+  font-size: 0.72rem;
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.notif-status.granted {
+  color: var(--good);
+  background: rgba(0, 230, 118, 0.08);
+}
+
+.notif-status.denied {
+  color: var(--bad);
+  background: rgba(255, 23, 68, 0.08);
+}
+
+.notif-status.prompt {
+  color: var(--warning);
+  background: rgba(255, 171, 0, 0.08);
+}
+
+.notif-status:empty {
+  display: none;
+}
+
+.notif-perm-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(124, 77, 255, 0.12);
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notif-perm-btn:hover {
+  background: rgba(124, 77, 255, 0.22);
+}
+
+.notif-perm-btn.hidden {
+  display: none;
+}
+
 /* ── Status Badge ──────────────────────────────────── */
 
 .status {

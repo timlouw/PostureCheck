@@ -90,29 +90,51 @@ const server = Bun.serve({
   },
 });
 
-/** Fire a native Windows toast notification via PowerShell */
+/** Fire a native OS notification — works on Windows, macOS, and Linux */
 function systemNotify(message: string) {
-  const escaped = message.replace(/'/g, "''");
-  Bun.spawn(
-    [
-      "powershell",
-      "-NoProfile",
-      "-Command",
+  const platform = process.platform;
+
+  if (platform === "win32") {
+    // Windows: PowerShell toast via NotifyIcon
+    const escaped = message.replace(/'/g, "''");
+    Bun.spawn(
       [
-        "Add-Type -AssemblyName System.Windows.Forms",
-        "$n = New-Object System.Windows.Forms.NotifyIcon",
-        "$n.Icon = [System.Drawing.SystemIcons]::Warning",
-        "$n.Visible = $true",
-        `$n.BalloonTipTitle = 'PostureCheck'`,
-        `$n.BalloonTipText = '${escaped}'`,
-        "$n.BalloonTipIcon = 'Warning'",
-        "$n.ShowBalloonTip(5000)",
-        "Start-Sleep -Seconds 6",
-        "$n.Dispose()",
-      ].join("; "),
-    ],
-    { stdout: "ignore", stderr: "ignore" },
-  );
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        [
+          "Add-Type -AssemblyName System.Windows.Forms",
+          "$n = New-Object System.Windows.Forms.NotifyIcon",
+          "$n.Icon = [System.Drawing.SystemIcons]::Warning",
+          "$n.Visible = $true",
+          `$n.BalloonTipTitle = 'PostureCheck'`,
+          `$n.BalloonTipText = '${escaped}'`,
+          "$n.BalloonTipIcon = 'Warning'",
+          "$n.ShowBalloonTip(5000)",
+          "Start-Sleep -Seconds 6",
+          "$n.Dispose()",
+        ].join("; "),
+      ],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+  } else if (platform === "darwin") {
+    // macOS: osascript notification
+    const escaped = message.replace(/"/g, '\\"');
+    Bun.spawn(
+      [
+        "osascript",
+        "-e",
+        `display notification "${escaped}" with title "PostureCheck" subtitle "⚠️ Posture Alert" sound name "Ping"`,
+      ],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+  } else {
+    // Linux: notify-send (libnotify)
+    Bun.spawn(
+      ["notify-send", "--urgency=critical", "--app-name=PostureCheck", "PostureCheck ⚠️", message],
+      { stdout: "ignore", stderr: "ignore" },
+    );
+  }
 }
 
 console.log(`

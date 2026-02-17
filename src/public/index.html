@@ -134,7 +134,7 @@
 
         <!-- Alert settings -->
         <div class="panel">
-          <h2>Alerts</h2>
+          <h2>🔔 Alerts</h2>
           <div class="slider-group">
             <label>Alert after <span id="delay-val" class="slider-val">10s</span> of bad posture</label>
             <input type="range" id="alert-delay" min="3" max="30" value="10" step="1" />
@@ -145,8 +145,13 @@
           </div>
           <div class="toggle-row">
             <label class="toggle"><input type="checkbox" id="sound-enabled" checked /><span class="toggle-label">🔊 Sound</span></label>
-            <label class="toggle"><input type="checkbox" id="notify-enabled" checked /><span class="toggle-label">🖥️ System Toast</span></label>
+            <label class="toggle"><input type="checkbox" id="notify-enabled" checked /><span class="toggle-label">🖥️ Notifications</span></label>
           </div>
+          <div id="notif-status" class="notif-status"></div>
+          <button id="notif-perm-btn" class="notif-perm-btn hidden">Enable Browser Notifications</button>
+          <p class="panel-hint" style="margin-top: 0.5rem; margin-bottom: 0;">
+            Alerts use 5 channels: visual overlay, sound, browser notification, system toast, and title flash — so you'll notice even with the tab in the background.
+          </p>
         </div>
 
       </aside>

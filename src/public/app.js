@@ -34,6 +34,8 @@ const alertDelayEl    = $("alert-delay");
 const alertCooldownEl = $("alert-cooldown");
 const soundEnabledEl  = $("sound-enabled");
 const notifyEnabledEl = $("notify-enabled");
+const notifStatusEl   = $("notif-status");
+const notifPermBtn    = $("notif-perm-btn");
 
 // ── State ─────────────────────────────────────────────
 
@@ -57,8 +59,15 @@ let trainedModel = null; // { goodCentroid, badCentroid } once enough samples
 let badPostureSince = null;
 let lastAlertTime = 0;
 
-// Audio
+// Audio — must be resumed on user gesture
 let audioCtx = null;
+
+// Browser Notifications
+let notifPermission = Notification?.permission ?? "denied";
+
+// Title flashing for background tab
+let titleFlashInterval = null;
+const TITLE_DEFAULT = "PostureCheck";
 
 // WebSocket
 let ws = null;
@@ -271,6 +280,9 @@ async function init() {
   loadSavedState();
   updateCameraAngleUI();
   updateMetricLabels();
+
+  // Request browser notification permission early
+  await requestNotificationPermission();
 
   console.log("[PostureCheck] Loading MediaPipe WASM...");
   const vision = await FilesetResolver.forVisionTasks("/wasm");
@@ -672,6 +684,18 @@ function enableTrainingButtons() {
 
 // ══════════════════════════════════════════════════════════
 //  Alert System
+//
+//  Multiple alert channels to ensure you're notified even
+//  when the tab is in the background:
+//
+//  1. Visual overlay — red border + text on the camera view
+//  2. Web Audio — three-tone chime (needs AudioContext resumed)
+//  3. Browser Notification API — works in background tabs on
+//     all platforms (Windows/Mac/Linux)
+//  4. Server-side system toast — via WebSocket → native
+//     notification command (PowerShell / osascript / notify-send)
+//  5. Title bar flash — alternates document.title so the tab
+//     visibly blinks in the taskbar
 // ══════════════════════════════════════════════════════════
 
 function handleAlerts(isGood) {
@@ -695,33 +719,163 @@ function handleAlerts(isGood) {
 }
 
 function fireAlert() {
+  // 1 — Visual overlay
   alertOverlay.classList.remove("hidden");
+
+  // 2 — Sound
   if (soundEnabledEl.checked) playAlertSound();
+
+  // 3 — Browser Notification (works in background tabs)
+  if (notifyEnabledEl.checked) showBrowserNotification();
+
+  // 4 — Server-side system toast
   if (notifyEnabledEl.checked && ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "bad-posture", message: "Fix your posture! 🧍" }));
   }
+
+  // 5 — Title flash
+  startTitleFlash();
+
+  // Auto-dismiss visual overlay after 5s
   setTimeout(hideAlert, 5000);
 }
 
-function hideAlert() { alertOverlay.classList.add("hidden"); }
+function hideAlert() {
+  alertOverlay.classList.add("hidden");
+  stopTitleFlash();
+}
+
+// ── Sound via Web Audio API ────────────────────────────
+//
+// AudioContext must be resumed after a user gesture (browser
+// autoplay policy). We resume it eagerly on first click/key
+// via ensureAudioContext(), so by the time an alert fires
+// the context is already running.
+
+function ensureAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume().catch(() => {});
+  }
+  return audioCtx;
+}
 
 function playAlertSound() {
-  if (!audioCtx) audioCtx = new AudioContext();
-  const tone = (freq, start, dur) => {
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.frequency.value = freq;
-    osc.type = "sine";
-    gain.gain.setValueAtTime(0.25, audioCtx.currentTime + start);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + start + dur);
-    osc.start(audioCtx.currentTime + start);
-    osc.stop(audioCtx.currentTime + start + dur);
-  };
-  tone(523, 0, 0.15);
-  tone(659, 0.18, 0.15);
-  tone(784, 0.36, 0.25);
+  try {
+    const ctx = ensureAudioContext();
+    if (ctx.state === "suspended") {
+      console.warn("[PostureCheck] AudioContext suspended — sound skipped (interact with page first)");
+      return;
+    }
+    const tone = (freq, start, dur) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = "sine";
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur);
+    };
+    // Three-tone ascending chime
+    tone(523, 0, 0.15);    // C5
+    tone(659, 0.18, 0.15); // E5
+    tone(784, 0.36, 0.25); // G5
+  } catch (err) {
+    console.warn("[PostureCheck] Sound playback error:", err);
+  }
+}
+
+// ── Browser Notification API ────────────────────────────
+//
+// Works when the tab is in the background on Windows, macOS,
+// and Linux. Requires one-time permission grant.
+
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    console.warn("[PostureCheck] Browser Notifications not supported");
+    updateNotifUI("unsupported");
+    return;
+  }
+  if (Notification.permission === "granted") {
+    notifPermission = "granted";
+    updateNotifUI("granted");
+    return;
+  }
+  if (Notification.permission === "denied") {
+    notifPermission = "denied";
+    updateNotifUI("denied");
+    return;
+  }
+  // "default" — we can ask
+  updateNotifUI("prompt");
+  const perm = await Notification.requestPermission();
+  notifPermission = perm;
+  updateNotifUI(perm);
+}
+
+function updateNotifUI(state) {
+  if (!notifStatusEl) return;
+  if (state === "granted") {
+    notifStatusEl.textContent = "✓ Browser notifications enabled";
+    notifStatusEl.className = "notif-status granted";
+    notifPermBtn?.classList.add("hidden");
+  } else if (state === "denied") {
+    notifStatusEl.textContent = "✗ Notifications blocked — enable in browser settings";
+    notifStatusEl.className = "notif-status denied";
+    notifPermBtn?.classList.add("hidden");
+  } else if (state === "prompt") {
+    notifStatusEl.textContent = "Browser notifications not yet permitted";
+    notifStatusEl.className = "notif-status prompt";
+    notifPermBtn?.classList.remove("hidden");
+  } else {
+    notifStatusEl.textContent = "Browser notifications not supported";
+    notifStatusEl.className = "notif-status denied";
+    notifPermBtn?.classList.add("hidden");
+  }
+}
+
+function showBrowserNotification() {
+  if (notifPermission !== "granted") return;
+  try {
+    const n = new Notification("PostureCheck ⚠️", {
+      body: "You've been slouching — sit up straight!",
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>🧍</text></svg>",
+      tag: "posture-alert",       // replaces previous, won't stack
+      requireInteraction: false,
+      silent: true,               // we handle our own sound
+    });
+    // Auto-close after 6s (some OS's don't auto-dismiss)
+    setTimeout(() => n.close(), 6000);
+  } catch (err) {
+    console.warn("[PostureCheck] Browser notification error:", err);
+  }
+}
+
+// ── Title Bar Flash ────────────────────────────────────
+//
+// Alternates the document title so the tab visually blinks
+// in the taskbar / tab bar — works everywhere.
+
+function startTitleFlash() {
+  if (titleFlashInterval) return;
+  let on = true;
+  titleFlashInterval = setInterval(() => {
+    document.title = on ? "⚠️ Fix Your Posture!" : TITLE_DEFAULT;
+    on = !on;
+  }, 800);
+}
+
+function stopTitleFlash() {
+  if (titleFlashInterval) {
+    clearInterval(titleFlashInterval);
+    titleFlashInterval = null;
+    document.title = TITLE_DEFAULT;
+  }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -815,6 +969,11 @@ function setupEventListeners() {
   soundEnabledEl.addEventListener("change", saveState);
   notifyEnabledEl.addEventListener("change", saveState);
 
+  // Notification permission button
+  notifPermBtn?.addEventListener("click", async () => {
+    await requestNotificationPermission();
+  });
+
   // Keyboard shortcuts for quick capture
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "INPUT") return;
@@ -822,6 +981,17 @@ function setupEventListeners() {
     if (e.key === "b" || e.key === "B") captureSample("bad");
     if (e.key === "z" && e.ctrlKey) undoLastSample();
   });
+
+  // Resume AudioContext on first user interaction (browser autoplay policy)
+  const resumeAudio = () => {
+    ensureAudioContext();
+    // Also re-request notification permission if not yet granted
+    if (notifPermission !== "granted") requestNotificationPermission();
+    document.removeEventListener("click", resumeAudio);
+    document.removeEventListener("keydown", resumeAudio);
+  };
+  document.addEventListener("click", resumeAudio);
+  document.addEventListener("keydown", resumeAudio);
 }
 
 // ══════════════════════════════════════════════════════════
